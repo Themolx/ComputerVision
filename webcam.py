@@ -17,6 +17,10 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, desired_height)
 # Variables for FPS calculation
 prev_time = time.time()
 
+# Define the codec and create VideoWriter object
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use 'mp4v' for MP4 output
+out = cv2.VideoWriter('output.mp4', fourcc, 20.0, (desired_width, desired_height))
+
 # Color definitions
 TEXT_COLOR = (255, 255, 255)  # White color for text
 BOX_COLOR = (0, 255, 0)       # Green color for bounding boxes
@@ -84,6 +88,9 @@ while True:
         cv2.LINE_AA
     )
 
+    # Write the annotated frame to the output video
+    out.write(annotated_frame)
+
     # Show the annotated frame
     cv2.imshow('YOLO Detection', annotated_frame)
 
@@ -93,4 +100,5 @@ while True:
 
 # Release resources
 cap.release()
+out.release()
 cv2.destroyAllWindows()
