@@ -1,92 +1,38 @@
 from ultralytics import YOLO
 import cv2
-import time
 
 # Load the model
-model = YOLO('yolo11n.pt')
+model = YOLO('yolo11n-seg.pt')
 
-# Open the webcam
-cap = cv2.VideoCapture(0)
+# Set the video source to a YouTube URL
+source = 1#'https://youtu.be/M6bm6yRKshA'
 
-# Set the desired resolution
-desired_width = 1280  # Replace with your desired width
-desired_height = 720  # Replace with your desired height
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, desired_width)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, desired_height)
+# Initialize variables
+first_frame = True
+out = None
 
-# Variables for FPS calculation
-prev_time = time.time()
+# Run prediction on the video source with streaming
+results = model.predict(
+    source=source,
+    show=False,          # We'll handle showing frames manually
+    stream=True,         # Return a generator
+    conf=0.2,            # Confidence threshold
+    iou=0.5,             # NMS IOU threshold
+    verbose=False,        # Suppress unnecessary output
+    stream_buffer=False,
+)
 
-# Define the codec and create VideoWriter object
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use 'mp4v' for MP4 output
-out = cv2.VideoWriter('output.mp4', fourcc, 20.0, (desired_width, desired_height))
+for result in results:
+    # Get the annotated frame
+    annotated_frame = result.plot()
 
-# Color definitions
-TEXT_COLOR = (255, 255, 255)  # White color for text
-BOX_COLOR = (0, 255, 0)       # Green color for bounding boxes
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    # Run prediction on the frame
-    results = model.predict(
-        frame,
-        conf=0.1,        # Confidence threshold
-        iou=0.5,         # NMS IOU threshold
-        verbose=False    # Suppress unnecessary output
-    )
-
-    # Visualize the results on the frame
-    annotated_frame = results[0].plot(
-        boxes=True,
-        labels=True,
-        conf=True,
-        line_width=2
-    )
-
-    # Calculate FPS
-    curr_time = time.time()
-    fps = 1 / (curr_time - prev_time)
-    prev_time = curr_time
-
-    # Overlay FPS on the frame
-    cv2.putText(
-        annotated_frame,
-        f'FPS: {fps:.2f}',
-        (10, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1,
-        TEXT_COLOR,
-        2,
-        cv2.LINE_AA
-    )
-
-    # Count the number of detections
-    num_detections = len(results[0].boxes)
-    cv2.putText(
-        annotated_frame,
-        f'Detections: {num_detections}',
-        (10, 70),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1,
-        TEXT_COLOR,
-        2,
-        cv2.LINE_AA
-    )
-
-    # Add a custom message
-    cv2.putText(
-        annotated_frame,
-        'Press Q to Exit',
-        (10, desired_height - 20),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1,
-        TEXT_COLOR,
-        2,
-        cv2.LINE_AA
-    )
+    # Initialize VideoWriter on the first frame
+    if first_frame:
+        height, width = annotated_frame.shape[:2]
+        fps = 15  # Set FPS to 30 or adjust as needed
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter('output.mp4', fourcc, fps, (width, height))
+        first_frame = False
 
     # Write the annotated frame to the output video
     out.write(annotated_frame)
@@ -96,9 +42,11 @@ while True:
 
     # Exit when 'Q' key is pressed
     if cv2.waitKey(1) & 0xFF == ord('q'):
+        print("Exiting...")
         break
 
 # Release resources
-cap.release()
-out.release()
+if out:
+    out.release()
 cv2.destroyAllWindows()
+
