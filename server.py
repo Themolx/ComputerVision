@@ -1,6 +1,6 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import cv2
 import numpy as np
@@ -8,12 +8,17 @@ from ultralytics import YOLO
 import json
 import base64
 import asyncio
-import uvicorn
+import time
+from collections import deque
+import logging
+import os
+import psutil
 
-# Initialize FastAPI app
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,86 +27,79 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize YOLO model
-model = YOLO('yolo11n.pt')
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# HTML content for the test page
-html = """
-<!DOCTYPE html>
-<html>
-    <head>
-        <title>YOLO WebSocket Test</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            #videoFeed { max-width: 800px; width: 100%; border: 1px solid #ccc; }
-            #status { margin: 10px 0; padding: 10px; background: #f0f0f0; }
-            #detections { margin-top: 10px; white-space: pre-wrap; }
-        </style>
-    </head>
-    <body>
-        <h1>YOLO WebSocket Test</h1>
-        <div id="status">Connecting...</div>
-        <img id="videoFeed" alt="Video Feed">
-        <div id="detections"></div>
+class ModelManager:
+    def __init__(self):
+        self.models = {
+            'yolo11n': {'path': 'yolo11n.pt', 'type': 'detect', 'loaded': None},
+            'yolo11n-seg': {'path': 'yolo11n-seg.pt', 'type': 'segment', 'loaded': None},
+            'yolo11n-pose': {'path': 'yolo11n-pose.pt', 'type': 'pose', 'loaded': None}
+        }
+        self.current_model = 'yolo11n'
+        self.load_model(self.current_model)
 
-        <script>
-            const status = document.getElementById('status');
-            const videoFeed = document.getElementById('videoFeed');
-            const detectionsDiv = document.getElementById('detections');
-            
-            function connect() {
-                const ws = new WebSocket('ws://localhost:8000/ws');
-                
-                ws.onopen = function() {
-                    status.textContent = 'Connected';
-                    status.style.background = '#d4edda';
-                };
+    def load_model(self, model_name):
+        if model_name not in self.models:
+            raise ValueError(f"Unknown model: {model_name}")
+        
+        if self.models[model_name]['loaded'] is None:
+            logger.info(f"Loading model: {model_name}")
+            self.models[model_name]['loaded'] = YOLO(self.models[model_name]['path'])
+        
+        self.current_model = model_name
+        return self.models[model_name]['loaded']
 
-                ws.onmessage = function(event) {
-                    const data = JSON.parse(event.data);
-                    videoFeed.src = 'data:image/jpeg;base64,' + data.frame;
-                    detectionsDiv.textContent = JSON.stringify(data.detections, null, 2);
-                };
+    def get_current_model(self):
+        return self.models[self.current_model]['loaded']
 
-                ws.onclose = function() {
-                    status.textContent = 'Disconnected - Reconnecting...';
-                    status.style.background = '#fff3cd';
-                    setTimeout(connect, 1000);
-                };
-
-                ws.onerror = function(error) {
-                    status.textContent = 'Error: ' + error;
-                    status.style.background = '#f8d7da';
-                };
-            }
-
-            connect();
-        </script>
-    </body>
-</html>
-"""
+    def get_model_type(self):
+        return self.models[self.current_model]['type']
 
 class VideoProcessor:
     def __init__(self):
         self.active = False
         self.settings = {
             "confidence": 0.25,
-            "iou": 0.45
+            "iou": 0.45,
+            "resolution": "720p"
         }
         self.capture = None
-    
+        self.fps_buffer = deque(maxlen=30)
+        self.model_manager = ModelManager()
+        
     def initialize_capture(self):
         if self.capture is None:
             self.capture = cv2.VideoCapture(0)
             if not self.capture.isOpened():
                 raise RuntimeError("Could not start camera.")
+            self.set_resolution(self.settings["resolution"])
+    
+    def set_resolution(self, resolution):
+        if resolution == "720p":
+            self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        elif resolution == "1080p":
+            self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+            self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
     
     def release_capture(self):
         if self.capture:
             self.capture.release()
             self.capture = None
     
+    def update_settings(self, settings):
+        self.settings.update(settings)
+        if "resolution" in settings and self.capture:
+            self.set_resolution(settings["resolution"])
+
     async def process_frame(self, frame):
+        start_time = time.time()
+        
+        model = self.model_manager.get_current_model()
+        model_type = self.model_manager.get_model_type()
+        
         results = model.predict(
             source=frame,
             conf=self.settings["confidence"],
@@ -130,20 +128,43 @@ class VideoProcessor:
                 }
                 detections.append(detection)
         
-        return detections, results[0].plot()
+        process_time = (time.time() - start_time) * 1000
+        self.fps_buffer.append(process_time)
+        
+        memory = psutil.Process().memory_info().rss / 1024 / 1024
+        
+        annotated_frame = results[0].plot()
+        
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(annotated_frame, 
+                   f"{model_type.upper()}: {process_time:.1f}ms", 
+                   (10, 30), font, 1, (255, 255, 255), 2)
+        
+        return detections, annotated_frame, process_time, memory
 
-# Create video processor instance
 video_processor = VideoProcessor()
 
-@app.get("/", response_class=HTMLResponse)
-async def get():
-    return html
+@app.get("/")
+async def read_index():
+    return FileResponse('static/index.html')
+
+@app.get("/api/models")
+async def get_models():
+    return list(video_processor.model_manager.models.keys())
+
+@app.post("/api/switch_model")
+async def switch_model(data: dict):
+    try:
+        video_processor.model_manager.load_model(data["model"])
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    print("New WebSocket connection attempting to connect...")
+    logger.info("New WebSocket connection attempting to connect...")
     await websocket.accept()
-    print("WebSocket connection established")
+    logger.info("WebSocket connection established")
     
     try:
         video_processor.initialize_capture()
@@ -153,32 +174,37 @@ async def websocket_endpoint(websocket: WebSocket):
             if video_processor.active:
                 ret, frame = video_processor.capture.read()
                 if not ret:
-                    print("Failed to capture frame")
+                    logger.error("Failed to capture frame")
                     break
                 
                 try:
-                    detections, annotated_frame = await video_processor.process_frame(frame)
+                    detections, annotated_frame, process_time, memory = await video_processor.process_frame(frame)
                     
                     _, buffer = cv2.imencode('.jpg', annotated_frame)
                     frame_base64 = base64.b64encode(buffer).decode('utf-8')
                     
                     await websocket.send_json({
                         "frame": frame_base64,
-                        "detections": detections
+                        "detections": detections,
+                        "process_time": process_time,
+                        "memory": memory,
+                        "timestamp": time.time()
                     })
+                    
                 except Exception as e:
-                    print(f"Error processing frame: {e}")
+                    logger.error(f"Error processing frame: {e}")
                     continue
                 
-            await asyncio.sleep(0.033)  # ~30 FPS
+            await asyncio.sleep(0.01)
             
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error(f"WebSocket error: {e}")
     finally:
-        print("WebSocket connection closed")
+        logger.info("WebSocket connection closed")
         video_processor.release_capture()
 
 if __name__ == "__main__":
-    print("Starting YOLO webcam server...")
-    print("Open http://localhost:8000 in your browser")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("🚀 Starting YOLO Vision Pro...")
+    print("📍 Open http://localhost:8000 in your browser")
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)     
