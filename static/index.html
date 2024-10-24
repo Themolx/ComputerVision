@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLO Vision Pro</title>
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Custom styles -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+
+        .glass-effect {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .stats-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stats-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .detection-item {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(96, 165, 250, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(96, 165, 250, 0);
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-8">
+            <div class="flex items-center space-x-4">
+                <div class="text-3xl font-bold text-blue-500">
+                    YOLO Vision Pro
+                </div>
+                <span class="px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400">
+                    v1.0.0
+                </span>
+            </div>
+            <div id="connectionStatus" class="flex items-center space-x-2 px-4 py-2 rounded-full glass-effect">
+                <div class="w-2 h-2 rounded-full bg-green-500 pulse"></div>
+                <span class="text-sm font-medium">Connected</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- Video Feed -->
+            <div class="lg:col-span-3">
+                <div class="glass-effect rounded-2xl p-4 mb-6">
+                    <div class="relative">
+                        <img id="videoFeed" class="w-full rounded-lg" alt="Video Feed">
+                        <div class="absolute top-4 right-4 glass-effect rounded-lg px-3 py-2 text-sm">
+                            Live Feed
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-3 gap-4 mb-6">
+                    <div class="stats-card glass-effect rounded-xl p-4">
+                        <div class="text-sm text-gray-400 mb-1">FPS</div>
+                        <div id="fps" class="text-2xl font-bold text-blue-400">0</div>
+                    </div>
+                    <div class="stats-card glass-effect rounded-xl p-4">
+                        <div class="text-sm text-gray-400 mb-1">Detections</div>
+                        <div id="detectionCount" class="text-2xl font-bold text-blue-400">0</div>
+                    </div>
+                    <div class="stats-card glass-effect rounded-xl p-4">
+                        <div class="text-sm text-gray-400 mb-1">Processing Time</div>
+                        <div id="processTime" class="text-2xl font-bold text-blue-400">0 ms</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="glass-effect rounded-2xl p-4">
+                <h2 class="text-lg font-semibold mb-4">Detection Log</h2>
+                <div id="detections" class="space-y-2 h-[600px] overflow-y-auto pr-2">
+                    <!-- Detection items will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const videoFeed = document.getElementById('videoFeed');
+        const detectionsDiv = document.getElementById('detections');
+        const fpsElement = document.getElementById('fps');
+        const detectionCountElement = document.getElementById('detectionCount');
+        const processTimeElement = document.getElementById('processTime');
+        const connectionStatus = document.getElementById('connectionStatus');
+        
+        let frameCount = 0;
+        let lastTime = Date.now();
+        
+        function updateFPS() {
+            const now = Date.now();
+            const delta = now - lastTime;
+            if (delta >= 1000) {
+                const fps = (frameCount * 1000) / delta;
+                fpsElement.textContent = fps.toFixed(1);
+                frameCount = 0;
+                lastTime = now;
+            }
+        }
+        
+        function updateConnectionStatus(connected) {
+            const statusDot = connectionStatus.querySelector('div');
+            const statusText = connectionStatus.querySelector('span');
+            
+            if (connected) {
+                statusDot.className = 'w-2 h-2 rounded-full bg-green-500 pulse';
+                statusText.textContent = 'Connected';
+                connectionStatus.classList.remove('bg-red-500/20');
+                connectionStatus.classList.add('glass-effect');
+            } else {
+                statusDot.className = 'w-2 h-2 rounded-full bg-red-500';
+                statusText.textContent = 'Disconnected';
+                connectionStatus.classList.remove('glass-effect');
+                connectionStatus.classList.add('bg-red-500/20');
+            }
+        }
+        
+        function connect() {
+            const ws = new WebSocket('ws://localhost:8000/ws');
+            
+            ws.onopen = function() {
+                updateConnectionStatus(true);
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                videoFeed.src = 'data:image/jpeg;base64,' + data.frame;
+                
+                frameCount++;
+                updateFPS();
+                
+                detectionCountElement.textContent = data.detections.length;
+                processTimeElement.textContent = `${data.process_time.toFixed(1)} ms`;
+                
+                // Update detections log
+                const detectionsHtml = data.detections.map(d => `
+                    <div class="detection-item glass-effect rounded-lg p-3 text-sm">
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium text-blue-400">${d.class}</span>
+                            <span class="text-gray-400">${(d.confidence * 100).toFixed(1)}%</span>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1">
+                            Position: ${d.x.toFixed(1)}, ${d.y.toFixed(1)}
+                        </div>
+                    </div>
+                `).join('');
+                detectionsDiv.innerHTML = detectionsHtml;
+            };
+
+            ws.onclose = function() {
+                updateConnectionStatus(false);
+                setTimeout(connect, 1000);
+            };
+
+            ws.onerror = function() {
+                updateConnectionStatus(false);
+            };
+        }
+
+        connect();
+    </script>
+</body>
+</html>
