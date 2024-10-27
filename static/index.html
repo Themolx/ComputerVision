@@ -4,217 +4,194 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YOLO Vision Pro</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        :root {
-            --primary-bg: #ffffff;
-            --secondary-bg: #f7f7f7;
-            --accent: #000000;
-            --text-primary: #000000;
-            --text-secondary: #666666;
-        }
-        
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--primary-bg);
-            color: var(--text-primary);
-        }
-
-        .mono {
-            font-family: 'Roboto Mono', monospace;
-        }
-
-        .card {
-            background: var(--secondary-bg);
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            transition: all 0.2s ease;
-        }
-
-        .card:hover {
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-        }
-
-        .detection-item {
-            animation: slideIn 0.3s ease-out;
-            transition: opacity 0.5s ease-out;
-            border-left: 3px solid #000;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateX(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
-        }
-
-        .source-select {
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23000' stroke-width='2'%3E%3Cpath d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 0.5rem center;
-            padding-right: 2rem;
-        }
-
-        input[type="range"] {
-            -webkit-appearance: none;
-            height: 2px;
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 480px;
             background: #000;
-            border-radius: 1px;
+            border-radius: 8px;
+            overflow: hidden;
         }
-
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            height: 16px;
-            width: 16px;
-            border-radius: 50%;
-            background: #000;
-            cursor: pointer;
+        #videoFeed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .status-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 12px;
+            color: white;
         }
     </style>
 </head>
-<body class="p-6">
+<body class="bg-gray-100 p-4">
     <div class="max-w-7xl mx-auto">
         <!-- Header -->
-        <div class="flex justify-between items-center mb-8">
-            <div class="flex items-center space-x-6">
-                <h1 class="text-2xl font-semibold tracking-tight">YOLO Vision</h1>
-                <div id="connectionStatus" class="text-sm px-4 py-2 bg-black text-white rounded-full mono"></div>
+        <div class="flex justify-between items-center mb-4">
+            <div class="flex items-center space-x-4">
+                <h1 class="text-2xl font-bold">YOLO Vision</h1>
+                <div id="connectionStatus" class="px-3 py-1 rounded-full bg-yellow-500 text-white text-sm">
+                    Connecting...
+                </div>
             </div>
-            
-            <div class="flex space-x-4">
-                <select id="sourceSelect" class="source-select px-4 py-2 border rounded-lg text-sm">
-                    <option value="0">Primary Camera</option>
-                    <option value="1">Secondary Camera</option>
-                    <option value="url">Stream URL</option>
-                </select>
-                <button id="settingsToggle" class="px-4 py-2 bg-black text-white rounded-lg text-sm hover:bg-gray-800 transition-colors">
-                    Settings
-                </button>
-            </div>
+            <button id="settingsBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Settings
+            </button>
         </div>
 
         <!-- Settings Panel -->
-        <div id="settingsPanel" class="mb-8 hidden">
-            <div class="grid grid-cols-3 gap-6">
+        <div id="settingsPanel" class="mb-4 hidden bg-white p-4 rounded-lg shadow">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <!-- Model Selection -->
-                <div class="card rounded-xl p-6">
-                    <h3 class="text-sm font-medium mb-4 uppercase tracking-wide">Model</h3>
-                    <div class="space-y-3" id="modelSelector">
-                        <div class="model-card p-3 rounded-lg bg-white cursor-pointer border hover:border-black transition-colors" data-model="yolo11n">
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm">YOLO11n</span>
-                                <span class="text-xs text-gray-500 mono">Detection</span>
-                            </div>
-                        </div>
-                        <div class="model-card p-3 rounded-lg bg-white cursor-pointer border hover:border-black transition-colors" data-model="yolo11n-seg">
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm">YOLO11n Seg</span>
-                                <span class="text-xs text-gray-500 mono">Segmentation</span>
-                            </div>
-                        </div>
-                        <div class="model-card p-3 rounded-lg bg-white cursor-pointer border hover:border-black transition-colors" data-model="yolo11n-pose">
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm">YOLO11n Pose</span>
-                                <span class="text-xs text-gray-500 mono">Pose</span>
-                            </div>
-                        </div>
-                    </div>
+                <div>
+                    <h3 class="font-bold mb-2">Model</h3>
+                    <select id="modelSelect" class="w-full p-2 border rounded">
+                        <option value="yolo11n">YOLO11n Detection</option>
+                        <option value="yolo11n-seg">YOLO11n Segmentation</option>
+                        <option value="yolo11n-pose">YOLO11n Pose</option>
+                    </select>
                 </div>
-
+                
                 <!-- Detection Settings -->
-                <div class="card rounded-xl p-6">
-                    <h3 class="text-sm font-medium mb-4 uppercase tracking-wide">Detection</h3>
-                    <div class="space-y-6">
-                        <div>
-                            <div class="flex justify-between mb-2">
-                                <label class="text-sm">Confidence</label>
-                                <span class="text-sm mono" id="confidenceValue">0.25</span>
-                            </div>
-                            <input type="range" id="confidenceSlider" min="0" max="100" value="25" class="w-full">
-                        </div>
-                        <div>
-                            <div class="flex justify-between mb-2">
-                                <label class="text-sm">IOU Threshold</label>
-                                <span class="text-sm mono" id="iouValue">0.45</span>
-                            </div>
-                            <input type="range" id="iouSlider" min="0" max="100" value="45" class="w-full">
-                        </div>
+                <div>
+                    <h3 class="font-bold mb-2">Detection</h3>
+                    <div class="space-y-2">
+                        <label>Confidence: <span id="confidenceValue">0.25</span></label>
+                        <input type="range" id="confidenceSlider" min="0" max="1" step="0.05" value="0.25" class="w-full">
                     </div>
                 </div>
 
                 <!-- Camera Settings -->
-                <div class="card rounded-xl p-6">
-                    <h3 class="text-sm font-medium mb-4 uppercase tracking-wide">Camera</h3>
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm mb-2">Resolution</label>
-                            <select id="resolutionSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
-                                <option value="720p">720p - Faster</option>
-                                <option value="1080p">1080p - Detailed</option>
-                            </select>
-                        </div>
-                        <div class="flex items-center space-x-3">
-                            <input type="checkbox" id="showLabels" checked class="rounded border-gray-300">
-                            <label class="text-sm">Show Labels</label>
-                        </div>
-                    </div>
+                <div>
+                    <h3 class="font-bold mb-2">Camera</h3>
+                    <select id="resolutionSelect" class="w-full p-2 border rounded">
+                        <option value="720p">720p - Faster</option>
+                        <option value="1080p">1080p - Detailed</option>
+                    </select>
                 </div>
             </div>
         </div>
 
-        <!-- Main Content -->
-        <div class="grid grid-cols-4 gap-6">
-            <!-- Video Feed -->
-            <div class="col-span-3">
-                <div class="card rounded-xl p-4 mb-4">
-                    <div class="relative">
-                        <img id="videoFeed" class="w-full rounded-lg" alt="Video Feed">
-                        <div class="absolute top-4 right-4 bg-black/80 px-3 py-1 rounded-full">
-                            <span class="text-xs text-white mono">LIVE</span>
-                        </div>
-                    </div>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <!-- Main Video Feed -->
+            <div class="md:col-span-3 space-y-4">
+                <div class="video-container">
+                    <img id="videoFeed" src="" alt="Video Feed">
+                    <div class="status-badge bg-red-500">LIVE</div>
                 </div>
 
                 <!-- Stats -->
                 <div class="grid grid-cols-4 gap-4">
-                    <div class="card rounded-xl p-4">
-                        <div class="text-xs text-gray-500 mb-1">FPS</div>
-                        <div id="fps" class="text-xl font-medium mono">0</div>
+                    <div class="bg-white p-4 rounded-lg">
+                        <div class="text-sm text-gray-500">FPS</div>
+                        <div id="fps" class="text-xl font-mono">0</div>
                     </div>
-                    <div class="card rounded-xl p-4">
-                        <div class="text-xs text-gray-500 mb-1">Objects</div>
-                        <div id="detectionCount" class="text-xl font-medium mono">0</div>
+                    <div class="bg-white p-4 rounded-lg">
+                        <div class="text-sm text-gray-500">Objects</div>
+                        <div id="detectionCount" class="text-xl font-mono">0</div>
                     </div>
-                    <div class="card rounded-xl p-4">
-                        <div class="text-xs text-gray-500 mb-1">Process Time</div>
-                        <div id="processTime" class="text-xl font-medium mono">0 ms</div>
+                    <div class="bg-white p-4 rounded-lg">
+                        <div class="text-sm text-gray-500">Process Time</div>
+                        <div id="processTime" class="text-xl font-mono">0 ms</div>
                     </div>
-                    <div class="card rounded-xl p-4">
-                        <div class="text-xs text-gray-500 mb-1">Memory</div>
-                        <div id="memoryUsage" class="text-xl font-medium mono">0 MB</div>
+                    <div class="bg-white p-4 rounded-lg">
+                        <div class="text-sm text-gray-500">Memory</div>
+                        <div id="memoryUsage" class="text-xl font-mono">0 MB</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Detection Log -->
-            <div class="card rounded-xl p-6">
-                <h2 class="text-sm font-medium mb-4 uppercase tracking-wide">Detections</h2>
-                <div id="detections" class="space-y-2 h-[600px] overflow-y-auto pr-2">
-                </div>
+            <!-- Detections Panel -->
+            <div class="bg-white p-4 rounded-lg">
+                <h2 class="font-bold mb-4">DETECTIONS</h2>
+                <div id="detectionsList" class="space-y-2"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // ... Previous JavaScript remains the same ...
-        // Would you like me to include the updated JavaScript as well?
+        // DOM Elements
+        const settingsBtn = document.getElementById('settingsBtn');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const videoFeed = document.getElementById('videoFeed');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const fps = document.getElementById('fps');
+        const detectionCount = document.getElementById('detectionCount');
+        const processTime = document.getElementById('processTime');
+        const memoryUsage = document.getElementById('memoryUsage');
+        const detectionsList = document.getElementById('detectionsList');
+
+        // Settings panel toggle
+        settingsBtn.addEventListener('click', () => {
+            settingsPanel.classList.toggle('hidden');
+        });
+
+        // WebSocket Connection
+        let ws = null;
+        let lastFrameTime = performance.now();
+
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.classList.remove('bg-yellow-500', 'bg-red-500');
+                connectionStatus.classList.add('bg-green-500');
+            };
+
+            ws.onclose = () => {
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.classList.remove('bg-green-500', 'bg-yellow-500');
+                connectionStatus.classList.add('bg-red-500');
+                setTimeout(connectWebSocket, 1000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                connectionStatus.textContent = 'Error';
+                connectionStatus.classList.add('bg-red-500');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                // Update video feed
+                videoFeed.src = `data:image/jpeg;base64,${data.frame}`;
+                
+                // Calculate FPS
+                const now = performance.now();
+                const frameTime = now - lastFrameTime;
+                const currentFps = Math.round(1000 / frameTime);
+                fps.textContent = currentFps;
+                lastFrameTime = now;
+                
+                // Update stats
+                processTime.textContent = `${Math.round(data.process_time)} ms`;
+                memoryUsage.textContent = `${Math.round(data.memory)} MB`;
+                detectionCount.textContent = data.detections.length;
+                
+                // Update detections list
+                updateDetectionsList(data.detections);
+            };
+        }
+
+        function updateDetectionsList(detections) {
+            detectionsList.innerHTML = detections.map(d => `
+                <div class="p-2 bg-gray-100 rounded">
+                    <span class="font-bold">${d.class}</span>
+                    <span class="text-gray-500 text-sm">${Math.round(d.confidence * 100)}%</span>
+                </div>
+            `).join('');
+        }
+
+        // Start connection
+        connectWebSocket();
     </script>
 </body>
 </html>
